@@ -1,21 +1,29 @@
 mod config;
+mod database;
 use std::sync::Arc;
 use axum::{Router, routing::get};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use axum::extract::State;
+use sqlx::PgPool;
+
+use axum::{extract::State,Json};
+
 #[derive(Clone)]
 pub struct AppState {
-    pub settings: std::sync::Arc<config::Settings>
+    pub settings: std::sync::Arc<config::Settings>,
+    pub db: PgPool
 }
 
 
 #[tokio::main]
 async fn main() {
     let settings = config::load().expect("Failed to load configuration");
-    
+    let db = database::create_pool(&settings.database_url)
+        .await
+        .expect("Failed to create database pool");
     let state = AppState {
-        settings: Arc::new(settings)
+        settings: Arc::new(settings),
+        db: db
     };
     
     tracing_subscriber::registry()
@@ -30,6 +38,7 @@ async fn main() {
         .route("/", get(root))
         .route("/port", get(port))
         .route("/health", get(health_check))
+        .route("/health/db", get(db_health))
         .with_state(state.clone())
         .layer(TraceLayer::new_for_http());
     let port = state.settings.port;
@@ -53,4 +62,20 @@ async fn health_check() -> &'static str {
 
 async fn port(State(state): State<AppState>) -> String {
     format!("Running on Port: {}", state.settings.port)
+}
+
+
+async fn db_health(
+    State(state): State<AppState>
+) -> String {
+
+    match sqlx::query("SELECT 1").fetch_one(&state.db).await {
+        Ok(_) => "Database OK".to_string(),
+        Err(e) => {
+            tracing::error!("Database health check failed: {}", e);
+            format!("Database health check failed: {}", e)
+        }
+    }
+
+
 }
