@@ -1,17 +1,23 @@
 mod config;
 mod database;
+mod models;
+mod repositories;
+mod services;
+mod handlers;
 use std::sync::Arc;
-use axum::{Router, routing::get};
+use axum::{Router, routing::{get,post}};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use sqlx::PgPool;
 
-use axum::{extract::State,Json};
+use axum::{extract::State};
+
+use crate::{handlers::auth_handler};
 
 #[derive(Clone)]
 pub struct AppState {
     pub settings: std::sync::Arc<config::Settings>,
-    pub db: PgPool
+    pub db: PgPool,
 }
 
 
@@ -36,6 +42,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
+        .route("/register", post(auth_handler::register))
         .route("/port", get(port))
         .route("/health", get(health_check))
         .route("/health/db", get(db_health))
